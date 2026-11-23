@@ -1,1 +1,6 @@
 Flask>=3.0,<4.0
+python -m pip install Flask
+python -m pip install Flask-Login
+python -m pip install Flask-SQLAlchemy
+python -m pip install sqlite3 
+python -m pip install pytest
