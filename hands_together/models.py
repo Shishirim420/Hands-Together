@@ -45,6 +45,7 @@ def init_db():
             );
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
                 kind TEXT NOT NULL CHECK(kind IN ('lost','found','missing')),
                 title TEXT NOT NULL,
                 category TEXT NOT NULL,
@@ -65,6 +66,7 @@ def init_db():
             );
             CREATE TABLE IF NOT EXISTS donations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
                 donor_name TEXT NOT NULL,
                 email TEXT NOT NULL,
                 amount REAL NOT NULL CHECK(amount > 0),
@@ -91,3 +93,9 @@ def init_db():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(volunteer_signups)")}
         if "user_id" not in columns:
             db.execute("ALTER TABLE volunteer_signups ADD COLUMN user_id INTEGER REFERENCES users(id)")
+        report_columns = {row["name"] for row in db.execute("PRAGMA table_info(reports)")}
+        if "user_id" not in report_columns:
+            db.execute("ALTER TABLE reports ADD COLUMN user_id INTEGER REFERENCES users(id)")
+        donation_columns = {row["name"] for row in db.execute("PRAGMA table_info(donations)")}
+        if "user_id" not in donation_columns:
+            db.execute("ALTER TABLE donations ADD COLUMN user_id INTEGER REFERENCES users(id)")

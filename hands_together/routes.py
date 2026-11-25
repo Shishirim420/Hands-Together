@@ -27,6 +27,15 @@ def admin_api_guard():
     return None
 
 
+def community_member_guard(action):
+    """Require the account type used for public reports and donations."""
+    if not session.get("user_id"):
+        return json_error(f"Create or sign in with a Community Member account to {action}.", 401)
+    if session.get("account_type") != "Community member":
+        return json_error(f"A Community Member account is required to {action}.", 403)
+    return None
+
+
 @web.get("/")
 @web.get("/home")
 @web.get("/index.html")
@@ -86,8 +95,16 @@ def admin_dashboard():
             "complaints": db.execute("SELECT COUNT(*) FROM complaints WHERE status = 'open'").fetchone()[0],
             "volunteers": db.execute("SELECT COUNT(*) FROM users WHERE account_type = 'Volunteer'").fetchone()[0],
         }
-        reports = db.execute("SELECT * FROM reports WHERE status = 'pending_review' ORDER BY id DESC LIMIT 20").fetchall()
-        donations = db.execute("SELECT * FROM donations WHERE status = 'pending' ORDER BY id DESC LIMIT 20").fetchall()
+        reports = db.execute(
+            "SELECT reports.*, users.full_name AS member_name, users.email AS member_email, users.phone AS member_phone "
+            "FROM reports LEFT JOIN users ON users.id = reports.user_id "
+            "WHERE reports.status = 'pending_review' ORDER BY reports.id DESC LIMIT 20"
+        ).fetchall()
+        donations = db.execute(
+            "SELECT donations.*, users.full_name AS member_name, users.email AS member_email, users.phone AS member_phone "
+            "FROM donations LEFT JOIN users ON users.id = donations.user_id "
+            "WHERE donations.status = 'pending' ORDER BY donations.id DESC LIMIT 20"
+        ).fetchall()
         complaints = db.execute("SELECT * FROM complaints WHERE status = 'open' ORDER BY id DESC LIMIT 20").fetchall()
     return render_template("admin_dashboard.html", counts=counts, reports=reports, donations=donations, complaints=complaints)
 
@@ -211,6 +228,12 @@ def create_report():
     report_date = str(data.get("date", "")).strip()
     if kind not in {"lost", "found", "missing"}:
         return json_error("Choose lost, found, or missing person report type.")
+    user_id = None
+    if kind == "missing":
+        guard = community_member_guard("report a missing person")
+        if guard:
+            return guard
+        user_id = session["user_id"]
     if not all((title, category, location, description, report_date)):
         return json_error("Complete all required report fields.")
     try:
@@ -220,8 +243,8 @@ def create_report():
     status = "pending_review" if kind == "missing" else "published"
     with database() as db:
         cur = db.execute(
-            "INSERT INTO reports(kind,title,category,report_date,location,description,status,created_at) VALUES(?,?,?,?,?,?,?,?)",
-            (kind, title, category, report_date, location, description, status, now_iso()),
+            "INSERT INTO reports(user_id,kind,title,category,report_date,location,description,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (user_id, kind, title, category, report_date, location, description, status, now_iso()),
         )
         report_id = cur.lastrowid
     return jsonify({"id": report_id, "status": status, "message": "Saved to the local database."}), 201
@@ -229,21 +252,25 @@ def create_report():
 
 @web.post("/api/donations")
 def create_donation():
+    guard = community_member_guard("submit a donation")
+    if guard:
+        return guard
     data = request.get_json(silent=True) or {}
-    donor_name = str(data.get("name", "")).strip()
-    email = str(data.get("email", "")).strip().lower()
     method = str(data.get("method", "")).strip()
     note = str(data.get("note", "")).strip()
     try:
         amount = float(data.get("amount", 0))
     except (TypeError, ValueError):
         amount = 0
-    if not donor_name or not email or not method or amount <= 0:
-        return json_error("Enter your name, email, donation amount, and payment method.")
+    if not method or amount <= 0:
+        return json_error("Enter a donation amount and payment method.")
     with database() as db:
+        member = db.execute(
+            "SELECT full_name, email FROM users WHERE id = ?", (session["user_id"],)
+        ).fetchone()
         cur = db.execute(
-            "INSERT INTO donations(donor_name,email,amount,method,note,created_at) VALUES(?,?,?,?,?,?)",
-            (donor_name, email, amount, method, note, now_iso()),
+            "INSERT INTO donations(user_id,donor_name,email,amount,method,note,created_at) VALUES(?,?,?,?,?,?,?)",
+            (session["user_id"], member["full_name"], member["email"], amount, method, note, now_iso()),
         )
     return jsonify({"id": cur.lastrowid, "message": "Your donation has been submitted for review."}), 201
 
