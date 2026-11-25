@@ -52,6 +52,11 @@ def found_page():
     return render_template("found.html")
 
 
+@web.get("/missing-person")
+def missing_person_page():
+    return render_template("missing_person.html")
+
+
 @web.get("/volunteer")
 @web.get("/volunteer.html")
 def volunteer_page():
